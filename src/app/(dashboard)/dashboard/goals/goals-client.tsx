@@ -343,7 +343,7 @@ export function GoalsClient({ settings, transactions, banks, categories }: Props
         cumulative,
       }
     })
-  }, [transactions, settings.initialBalance, monthlyMap])
+  }, [settings.initialBalance, monthlyMap])
 
   // Transactions grouped by month for the list
   const groupedTransactions = useMemo(() => {
@@ -368,11 +368,6 @@ export function GoalsClient({ settings, transactions, banks, categories }: Props
       else next.add(month)
       return next
     })
-  }
-
-  function formatMonthLabel(ym: string) {
-    const [y, m] = ym.split("-").map(Number)
-    return `${MONTHS_FULL[m - 1]} ${y}`
   }
 
   const yAxisMax = settings.goalAmount > 0
