@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import {
   LayoutDashboard,
-  Target,
+  BarChart2,
   Settings,
   TrendingUp,
   LogOut,
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/goals", label: "Metas", icon: Target },
+  { href: "/dashboard/goals", label: "Investimentos", icon: BarChart2 },
 ];
 
 /** Shared animated label — fades out without affecting layout */

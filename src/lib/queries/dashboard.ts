@@ -10,43 +10,147 @@ function monthRange(date: Date) {
   }
 }
 
-export async function getDashboardStats(month?: Date) {
+export type ProjectionItem = {
+  id: string
+  description: string
+  amount: number
+  date: string
+  subtype?: string | null
+  installment_number?: number | null
+  total_installments?: number | null
+  isProjected?: true
+  banks: { id: string; name: string; color: string } | null
+  categories?: { id: string; name: string; color: string; icon: string } | null
+}
+
+export async function getMonthlyProjection(month: Date) {
   const supabase = await createClient()
-  const { start, end } = monthRange(month ?? new Date())
+  const { start, end } = monthRange(month)
+
+  const [{ data: transactions }, { data: templates }] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("id, type, subtype, amount, date, description, recurring_template_id, installment_number, total_installments, banks(id, name, color), categories(id, name, color, icon)")
+      .gte("date", start)
+      .lte("date", end),
+    supabase
+      .from("recurring_templates")
+      .select("id, type, amount, description, day_of_month, banks(id, name, color)")
+      .eq("is_active", true)
+      .lte("start_date", end),
+  ])
+
+  const coveredTemplateIds = new Set(
+    (transactions ?? []).map((t) => t.recurring_template_id).filter(Boolean)
+  )
+  const monthPrefix = start.slice(0, 7)
+
+  const incomeTransactions = (transactions ?? []).filter((t) => t.type === "income")
+  const projectedIncomeTemplates = (templates ?? [])
+    .filter((t) => t.type === "income" && !coveredTemplateIds.has(t.id))
+    .map((t) => ({ ...t, isProjected: true as const, date: `${monthPrefix}-${String(t.day_of_month).padStart(2, "0")}`, subtype: "recurring", categories: null }))
+  const totalIncome = [...incomeTransactions, ...projectedIncomeTemplates].reduce((s, t) => s + t.amount, 0)
+
+  const fixedTransactions = (transactions ?? []).filter((t) => t.type === "expense" && t.recurring_template_id !== null)
+  const projectedFixedTemplates = (templates ?? [])
+    .filter((t) => t.type === "expense" && !coveredTemplateIds.has(t.id))
+    .map((t) => ({ ...t, isProjected: true as const, date: `${monthPrefix}-${String(t.day_of_month).padStart(2, "0")}`, subtype: "recurring", categories: null }))
+  const totalFixed = [...fixedTransactions, ...projectedFixedTemplates].reduce((s, t) => s + t.amount, 0)
+
+  const installmentTransactions = (transactions ?? []).filter((t) => t.type === "expense" && t.subtype === "installment")
+  const totalInstallments = installmentTransactions.reduce((s, t) => s + t.amount, 0)
+
+  const dailyTransactions = (transactions ?? []).filter(
+    (t) => t.type === "expense" && !t.recurring_template_id && t.subtype !== "installment"
+  )
+  const totalDaily = dailyTransactions.reduce((s, t) => s + t.amount, 0)
+
+  return {
+    totalIncome,
+    totalFixed,
+    totalInstallments,
+    totalDaily,
+    incomeItems: [...incomeTransactions, ...projectedIncomeTemplates] as unknown as ProjectionItem[],
+    fixedItems: [...fixedTransactions, ...projectedFixedTemplates] as unknown as ProjectionItem[],
+    installmentItems: installmentTransactions as unknown as ProjectionItem[],
+    dailyItems: dailyTransactions as unknown as ProjectionItem[],
+  }
+}
+
+export async function getCreditCardFaturas() {
+  const supabase = await createClient()
+  const today = new Date()
+
+  const { data: banks } = await supabase
+    .from("banks")
+    .select("id, name, color, closing_day, payment_due_day")
+    .eq("account_type", "credit_card")
+    .eq("is_active", true)
+
+  if (!banks || banks.length === 0) return []
+
+  const results = await Promise.all(
+    banks.map(async (bank) => {
+      const closingDay = bank.closing_day ?? 1
+      const d = today.getDate()
+      let cycleStart: Date, cycleEnd: Date
+      if (d > closingDay) {
+        cycleStart = new Date(today.getFullYear(), today.getMonth(), closingDay + 1)
+        cycleEnd = new Date(today.getFullYear(), today.getMonth() + 1, closingDay)
+      } else {
+        cycleStart = new Date(today.getFullYear(), today.getMonth() - 1, closingDay + 1)
+        cycleEnd = new Date(today.getFullYear(), today.getMonth(), closingDay)
+      }
+
+      const { data } = await supabase
+        .from("transactions")
+        .select("amount, description, date")
+        .eq("bank_id", bank.id)
+        .eq("type", "expense")
+        .gte("date", cycleStart.toISOString().slice(0, 10))
+        .lte("date", cycleEnd.toISOString().slice(0, 10))
+        .order("date", { ascending: false })
+
+      return {
+        bankId: bank.id,
+        bankName: bank.name,
+        bankColor: bank.color,
+        closingDay,
+        paymentDueDay: bank.payment_due_day as number | null,
+        fatura: (data ?? []).reduce((s, t) => s + t.amount, 0),
+        transactions: (data ?? []) as Array<{ amount: number; description: string; date: string }>,
+      }
+    })
+  )
+
+  return results
+}
+
+export async function getMonthlyCashBalance(month: string): Promise<number> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("monthly_cash_balances")
+    .select("cash_balance")
+    .eq("month", month)
+    .maybeSingle()
+  return data?.cash_balance ?? 0
+}
+
+export async function getRecentTransactions(): Promise<TransactionWithRelations[]> {
+  const supabase = await createClient()
+  const today = new Date()
+  const threeDaysAgo = new Date(today)
+  threeDaysAgo.setDate(today.getDate() - 3)
+  const from = threeDaysAgo.toISOString().slice(0, 10)
 
   const { data } = await supabase
     .from("transactions")
-    .select("type, amount")
-    .gte("date", start)
-    .lte("date", end)
-
-  const income = data?.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0) ?? 0
-  const expenses = data?.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0) ?? 0
-  const investments = data?.filter((t) => t.type === "investment").reduce((s, t) => s + t.amount, 0) ?? 0
-  const cashBalance = income - expenses - investments
-
-  return { income, expenses, investments, cashBalance }
-}
-
-export async function getTotalBalance() {
-  const supabase = await createClient()
-  const { data } = await supabase.from("banks").select("current_balance").eq("is_active", true)
-  return data?.reduce((s, b) => s + b.current_balance, 0) ?? 0
-}
-
-export async function getRecentTransactions(limit = 10): Promise<TransactionWithRelations[]> {
-  const supabase = await createClient()
-  const { start, end } = monthRange(new Date())
-
-  const { data } = await supabase
-    .from("transactions")
-    .select("*, banks(id, name, slug, color), categories(id, name, color, icon)")
-    .gte("date", start)
-    .lte("date", end)
+    .select("id, description, amount, type, subtype, date, notes, bank_id, category_id, user_id, created_at, installment_number, total_installments, installment_group_id, recurring_template_id, banks(id, name, slug, color), categories(id, name, color, icon)")
+    .gte("date", from)
     .order("date", { ascending: false })
-    .limit(limit)
+    .limit(20)
 
-  return (data ?? []) as TransactionWithRelations[]
+  return (data ?? []) as unknown as TransactionWithRelations[]
 }
 
 export async function getCategoryBreakdown(month?: Date) {
@@ -77,34 +181,94 @@ export async function getCategoryBreakdown(month?: Date) {
     .sort((a, b) => b.amount - a.amount)
 }
 
-export async function getMonthlyChartData(months = 6) {
+export async function getDailyChartData(month: Date) {
   const supabase = await createClient()
-  const results = []
-  const now = new Date()
+  const { start, end } = monthRange(month)
+  const lastDay = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
 
-  for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const { start, end } = monthRange(d)
-    const { data } = await supabase
+  const [{ data: transactions }, { data: templates }] = await Promise.all([
+    supabase
       .from("transactions")
-      .select("type, amount")
+      .select("type, amount, date, recurring_template_id")
       .gte("date", start)
-      .lte("date", end)
+      .lte("date", end),
+    supabase
+      .from("recurring_templates")
+      .select("id, type, amount, day_of_month")
+      .eq("is_active", true)
+      .lte("start_date", end),
+  ])
 
-    const income = data?.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0) ?? 0
-    const expenses = data?.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0) ?? 0
-    const investments = data?.filter((t) => t.type === "investment").reduce((s, t) => s + t.amount, 0) ?? 0
+  const coveredTemplateIds = new Set(
+    (transactions ?? []).map((t) => t.recurring_template_id).filter(Boolean)
+  )
 
-    results.push({
-      month: d.toLocaleString("pt-BR", { month: "short" }),
-      income,
-      expenses,
-      investments,
-      balance: income - expenses - investments,
-    })
+  type DayEntry = { income: number; expenses: number }
+  const dayMap = new Map<number, DayEntry>()
+  for (let d = 1; d <= lastDay; d++) {
+    dayMap.set(d, { income: 0, expenses: 0 })
   }
 
-  return results
+  for (const t of transactions ?? []) {
+    const day = parseInt(t.date.slice(8, 10))
+    const entry = dayMap.get(day)!
+    if (t.type === "income") entry.income += t.amount
+    else entry.expenses += t.amount
+  }
+
+  for (const tpl of templates ?? []) {
+    if (coveredTemplateIds.has(tpl.id)) continue
+    const day = Math.min(tpl.day_of_month, lastDay)
+    const entry = dayMap.get(day)!
+    if (tpl.type === "income") entry.income += tpl.amount
+    else entry.expenses += tpl.amount
+  }
+
+  let cumBalance = 0
+  return Array.from(dayMap.entries()).map(([day, { income, expenses }]) => {
+    cumBalance += income - expenses
+    return { day: String(day), income, expenses, balance: cumBalance }
+  })
+}
+
+// Single query for all months instead of N sequential queries
+export async function getMonthlyChartData(months = 6) {
+  const supabase = await createClient()
+  const now = new Date()
+  const earliest = new Date(now.getFullYear(), now.getMonth() - months + 1, 1)
+  const { start: rangeStart } = monthRange(earliest)
+  const { end: rangeEnd } = monthRange(now)
+
+  const { data } = await supabase
+    .from("transactions")
+    .select("type, amount, date")
+    .gte("date", rangeStart)
+    .lte("date", rangeEnd)
+
+  const monthMap = new Map<string, { month: string; income: number; expenses: number; investments: number }>()
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const key = d.toISOString().slice(0, 7)
+    const label = d.toLocaleString("pt-BR", { month: "short" })
+    monthMap.set(key, { month: label, income: 0, expenses: 0, investments: 0 })
+  }
+
+  for (const t of data ?? []) {
+    const key = t.date.slice(0, 7)
+    const entry = monthMap.get(key)
+    if (!entry) continue
+    if (t.type === "income") entry.income += t.amount
+    else if (t.type === "expense") entry.expenses += t.amount
+    else if (t.type === "investment") entry.investments += t.amount
+  }
+
+  return Array.from(monthMap.values()).map(({ month, income, expenses, investments }) => ({
+    month,
+    income,
+    expenses,
+    investments,
+    balance: income - expenses - investments,
+  }))
 }
 
 export async function getTransactions(filters?: {
@@ -135,13 +299,16 @@ export async function getTransactions(filters?: {
 
 export async function getBanks() {
   const supabase = await createClient()
-  const { data } = await supabase.from("banks").select("*").order("created_at")
+  const { data } = await supabase
+    .from("banks")
+    .select("id, name, slug, color, current_balance, is_active, account_type, closing_day, payment_due_day, created_at, user_id")
+    .order("created_at")
   return data ?? []
 }
 
 export async function getCategories(type?: "income" | "expense") {
   const supabase = await createClient()
-  let query = supabase.from("categories").select("*").order("name")
+  let query = supabase.from("categories").select("id, name, type, color, icon, user_id, created_at").order("name")
   if (type) query = query.eq("type", type)
   const { data } = await query
   return data ?? []
@@ -151,11 +318,11 @@ export async function getRecurringTemplates(type?: "income" | "expense") {
   const supabase = await createClient()
   let query = supabase
     .from("recurring_templates")
-    .select("*, banks(id, name, color), categories(id, name, color)")
+    .select("id, description, amount, type, day_of_month, is_active, start_date, banks(id, name, color), categories(id, name, color)")
     .order("created_at", { ascending: false })
   if (type) query = query.eq("type", type)
   const { data } = await query
-  return (data ?? []) as Array<{
+  return (data ?? []) as unknown as Array<{
     id: string
     description: string
     amount: number
@@ -168,23 +335,54 @@ export async function getRecurringTemplates(type?: "income" | "expense") {
   }>
 }
 
+export async function getInvestmentSettings() {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("investment_settings")
+    .select("goal_amount, initial_balance")
+    .maybeSingle()
+  return {
+    goalAmount: data?.goal_amount ?? 0,
+    initialBalance: data?.initial_balance ?? 0,
+  }
+}
+
+export async function getAllInvestmentTransactions() {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("transactions")
+    .select("id, description, amount, date, banks(name, color)")
+    .eq("type", "investment")
+    .order("date", { ascending: false })
+  return (data ?? []) as unknown as Array<{
+    id: string
+    description: string
+    amount: number
+    date: string
+    banks: { name: string; color: string } | null
+  }>
+}
+
+// Parallel queries instead of sequential
 export async function getInvestmentGoals(months = 6) {
   const supabase = await createClient()
   const from = new Date()
   from.setMonth(from.getMonth() - months + 1)
   from.setDate(1)
+  const fromStr = from.toISOString().slice(0, 10)
 
-  const { data: goals } = await supabase
-    .from("investment_goals")
-    .select("*")
-    .gte("month", from.toISOString().slice(0, 10))
-    .order("month", { ascending: false })
-
-  const { data: investments } = await supabase
-    .from("transactions")
-    .select("amount, date")
-    .eq("type", "investment")
-    .gte("date", from.toISOString().slice(0, 10))
+  const [{ data: goals }, { data: investments }] = await Promise.all([
+    supabase
+      .from("investment_goals")
+      .select("*")
+      .gte("month", fromStr)
+      .order("month", { ascending: false }),
+    supabase
+      .from("transactions")
+      .select("amount, date")
+      .eq("type", "investment")
+      .gte("date", fromStr),
+  ])
 
   const map = new Map<string, number>()
   for (const t of investments ?? []) {

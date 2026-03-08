@@ -20,6 +20,12 @@ import { createCategory, updateCategory, deleteCategory } from "@/lib/actions/ca
 import { createRecurringTemplate, toggleRecurringTemplate } from "@/lib/actions/recurring"
 import type { Bank, Category } from "@/lib/supabase/types"
 
+type ExtendedBank = Bank & {
+  account_type?: string
+  closing_day?: number | null
+  payment_due_day?: number | null
+}
+
 type RecurringTemplate = {
   id: string
   description: string
@@ -33,7 +39,7 @@ type RecurringTemplate = {
 }
 
 interface Props {
-  banks: Bank[]
+  banks: ExtendedBank[]
   categories: Category[]
   recurringTemplates: RecurringTemplate[]
 }
@@ -67,7 +73,7 @@ const SUBTYPE_COLORS: Record<string, string> = {
 }
 
 function TransactionModal({ banks, categories, recurringTemplates, onClose, onViewRecurring }: {
-  banks: Bank[]
+  banks: ExtendedBank[]
   categories: Category[]
   recurringTemplates: RecurringTemplate[]
   onClose: () => void
@@ -236,61 +242,39 @@ function TransactionModal({ banks, categories, recurringTemplates, onClose, onVi
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
-                {isRecurringMode ? (
-                  <>
-                    <div>
-                      <label className="block text-xs text-zinc-400 mb-1">Dia do mês</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="31"
-                        value={dayOfMonth}
-                        onChange={(e) => setDayOfMonth(e.target.value)}
-                        required
-                        placeholder="Ex: 5"
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">
+                    {isRecurringMode ? "Data de início" : "Data"}
+                  </label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          "flex h-9 w-full items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 text-sm text-left",
+                          !date && "text-zinc-500"
+                        )}
+                      >
+                        <CalendarIcon className="h-4 w-4 text-zinc-500 shrink-0" />
+                        {date ? format(date, "dd/MM/yyyy") : "Selecionar data"}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={date}
+                        onSelect={setDate}
+                        locale={ptBR}
+                        initialFocus
                       />
-                      <p className="text-[10px] text-zinc-600 mt-1">Se o mês não tiver este dia, usa o último</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-zinc-400 mb-1">Mês inicial</label>
-                      <input
-                        type="month"
-                        value={startMonth}
-                        onChange={(e) => setStartMonth(e.target.value)}
-                        required
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Data</label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          className={cn(
-                            "flex h-9 w-full items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 text-sm text-left",
-                            !date && "text-zinc-500"
-                          )}
-                        >
-                          <CalendarIcon className="h-4 w-4 text-zinc-500 shrink-0" />
-                          {date ? format(date, "dd/MM/yyyy") : "Selecionar data"}
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent align="start" className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={date}
-                          onSelect={setDate}
-                          locale={ptBR}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                )}
+                    </PopoverContent>
+                  </Popover>
+                  {isRecurringMode && date && (
+                    <p className="text-[10px] text-blue-400/70 mt-1">
+                      Recorrência todo dia {date.getDate()} do mês
+                    </p>
+                  )}
+                </div>
                 {selectedSubtype === "installment_expense" && (
                   <div className="col-span-2">
                     <label className="block text-xs text-zinc-400 mb-1">Número de parcelas</label>
@@ -316,6 +300,12 @@ function TransactionModal({ banks, categories, recurringTemplates, onClose, onVi
                       ))}
                     </SelectContent>
                   </Select>
+                  {banks.find((b) => b.id === bankId)?.account_type === "credit_card" && (
+                    <p className="text-[11px] text-blue-400/80 mt-1 flex items-center gap-1">
+                      <CreditCard className="w-3 h-3" />
+                      Cartão de Crédito — será incluído na fatura
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-zinc-400 mb-1">Categoria</label>
@@ -578,10 +568,154 @@ function CategoryModal({ categories, onClose }: { categories: Category[]; onClos
   )
 }
 
+// ─── Recurring List Modal ─────────────────────────────────────────────────────
+
+function RecurringListModal({ templates, onClose }: { templates: RecurringTemplate[]; onClose: () => void }) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+
+  const incomeTemplates = templates.filter((t) => t.type === "income")
+  const expenseTemplates = templates.filter((t) => t.type === "expense")
+
+  function handleToggle(id: string, current: boolean) {
+    setTogglingId(id)
+    startTransition(async () => {
+      try {
+        await toggleRecurringTemplate(id, !current)
+        router.refresh()
+      } finally {
+        setTogglingId(null)
+      }
+    })
+  }
+
+  function TemplateCard({ t }: { t: RecurringTemplate }) {
+    const isIncome = t.type === "income"
+    const toggling = togglingId === t.id
+    return (
+      <div className={cn(
+        "flex items-center gap-3 p-3 rounded-xl border transition-all",
+        t.is_active
+          ? isIncome
+            ? "bg-emerald-500/5 border-emerald-500/20"
+            : "bg-red-500/5 border-red-500/20"
+          : "bg-zinc-800/40 border-zinc-700/40 opacity-50"
+      )}>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-sm font-medium text-white truncate">{t.description}</span>
+            {!t.is_active && (
+              <span className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-1 py-0.5 shrink-0">inativo</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={cn("text-xs font-semibold", isIncome ? "text-emerald-400" : "text-red-400")}>
+              {isIncome ? "+" : "-"} R$ {t.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+            </span>
+            <span className="text-[10px] text-zinc-500">•</span>
+            <span className="text-[10px] text-zinc-500">dia {t.day_of_month}</span>
+            {t.categories && (
+              <>
+                <span className="text-[10px] text-zinc-500">•</span>
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: t.categories.color }} />
+                  <span className="text-[10px] text-zinc-400">{t.categories.name}</span>
+                </span>
+              </>
+            )}
+            {t.banks && (
+              <>
+                <span className="text-[10px] text-zinc-500">•</span>
+                <span className="text-[10px] text-zinc-400">{t.banks.name}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={toggling || isPending}
+          onClick={() => handleToggle(t.id, t.is_active)}
+          className={cn(
+            "relative shrink-0 w-10 h-5 rounded-full transition-all duration-200 focus:outline-none",
+            t.is_active
+              ? isIncome ? "bg-emerald-500" : "bg-red-500"
+              : "bg-zinc-700"
+          )}
+        >
+          <span className={cn(
+            "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200",
+            t.is_active && "translate-x-5"
+          )} />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-zinc-800 shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-white">Recorrentes & Fixas</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">{templates.length} {templates.length === 1 ? "cadastrada" : "cadastradas"}</p>
+          </div>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
+          {templates.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <RefreshCw className="w-8 h-8 text-zinc-700 mb-3" />
+              <p className="text-zinc-500 text-sm">Nenhuma transação recorrente cadastrada</p>
+              <p className="text-zinc-600 text-xs mt-1">Crie uma receita recorrente ou despesa fixa</p>
+            </div>
+          )}
+
+          {incomeTemplates.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[10px] text-emerald-500 uppercase tracking-widest font-medium">Receitas Recorrentes</span>
+                <span className="text-[10px] text-zinc-600 bg-zinc-800 rounded px-1.5 py-0.5">{incomeTemplates.length}</span>
+              </div>
+              <div className="space-y-2">
+                {incomeTemplates.map((t) => <TemplateCard key={t.id} t={t} />)}
+              </div>
+            </div>
+          )}
+
+          {expenseTemplates.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[10px] text-red-500 uppercase tracking-widest font-medium">Despesas Fixas</span>
+                <span className="text-[10px] text-zinc-600 bg-zinc-800 rounded px-1.5 py-0.5">{expenseTemplates.length}</span>
+              </div>
+              <div className="space-y-2">
+                {expenseTemplates.map((t) => <TemplateCard key={t.id} t={t} />)}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 pb-6 pt-4 border-t border-zinc-800 shrink-0">
+          <button
+            onClick={onClose}
+            className="w-full py-2 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white text-sm transition-colors"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Dashboard Action Tabs ────────────────────────────────────────────────────
 
 export function DashboardActionTabs({ banks, categories, recurringTemplates }: Props) {
-  const [modal, setModal] = useState<"transactions" | "categories" | null>(null)
+  const [modal, setModal] = useState<"transactions" | "categories" | "recurring-list" | null>(null)
 
   return (
     <>
@@ -606,11 +740,18 @@ export function DashboardActionTabs({ banks, categories, recurringTemplates }: P
           categories={categories}
           recurringTemplates={recurringTemplates}
           onClose={() => setModal(null)}
+          onViewRecurring={() => setModal("recurring-list")}
         />
       )}
       {modal === "categories" && (
         <CategoryModal
           categories={categories}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === "recurring-list" && (
+        <RecurringListModal
+          templates={recurringTemplates}
           onClose={() => setModal(null)}
         />
       )}

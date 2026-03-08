@@ -24,6 +24,7 @@ interface StatsCardProps {
   trendLabel?: string;
   variant?: "default" | "green" | "red" | "purple";
   decimalPlaces?: number;
+  compact?: boolean;
 }
 
 const variants = {
@@ -63,26 +64,31 @@ export function StatsCard({
   trendLabel,
   variant = "default",
   decimalPlaces = 2,
+  compact = false,
 }: StatsCardProps) {
   const styles = variants[variant];
   const Icon = iconMap[icon];
 
   return (
-    <div className="relative rounded-xl bg-zinc-900 border border-zinc-800 p-5 overflow-hidden group hover:border-zinc-700 transition-colors">
+    <div className={cn(
+      "relative rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden group hover:border-zinc-700 transition-colors",
+      compact ? "p-3" : "p-5"
+    )}>
       <BorderBeam
         colorFrom={styles.beamFrom}
         colorTo={styles.beamTo}
         duration={5}
       />
 
-      <div className="flex items-start justify-between mb-4">
+      <div className={cn("flex items-start justify-between", compact ? "mb-2" : "mb-4")}>
         <div
           className={cn(
-            "w-9 h-9 rounded-lg flex items-center justify-center border",
+            "rounded-lg flex items-center justify-center border",
+            compact ? "w-7 h-7" : "w-9 h-9",
             styles.icon
           )}
         >
-          <Icon className="w-4 h-4" />
+          <Icon className={compact ? "w-3 h-3" : "w-4 h-4"} />
         </div>
 
         {trend !== undefined && (
@@ -99,11 +105,11 @@ export function StatsCard({
         )}
       </div>
 
-      <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">
+      <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">
         {title}
       </p>
 
-      <div className={cn("text-2xl font-bold font-mono tracking-tight", styles.value)}>
+      <div className={cn("font-bold font-mono tracking-tight", compact ? "text-lg" : "text-2xl", styles.value)}>
         {prefix}
         <NumberTicker
           value={value}
@@ -114,7 +120,7 @@ export function StatsCard({
       </div>
 
       {trendLabel && (
-        <p className="text-[11px] text-zinc-600 mt-1.5">{trendLabel}</p>
+        <p className="text-[10px] text-zinc-600 mt-1">{trendLabel}</p>
       )}
     </div>
   );

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import type { BankInsert } from "@/lib/supabase/types"
 
-export async function createBank(data: Omit<BankInsert, "user_id">) {
+export async function createBank(data: Omit<BankInsert, "user_id"> & { account_type?: string; closing_day?: number | null; payment_due_day?: number | null }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error("Não autenticado")
@@ -14,7 +14,7 @@ export async function createBank(data: Omit<BankInsert, "user_id">) {
   revalidatePath("/dashboard/settings")
 }
 
-export async function updateBank(id: string, data: { name?: string; current_balance?: number; is_active?: boolean }) {
+export async function updateBank(id: string, data: { name?: string; current_balance?: number; is_active?: boolean; account_type?: string; closing_day?: number | null; payment_due_day?: number | null }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error("Não autenticado")

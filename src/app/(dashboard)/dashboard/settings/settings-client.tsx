@@ -1,24 +1,33 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, Pencil, Trash2, Power } from "lucide-react"
+import { Plus, Pencil, Trash2, Power, CreditCard } from "lucide-react"
 import { KNOWN_BANKS } from "@/lib/banks"
 import { BankLogo } from "@/components/dashboard/bank-logo"
 import { createBank, updateBank, deleteBank } from "@/lib/actions/banks"
 import type { Bank } from "@/lib/supabase/types"
 
+type ExtendedBank = Bank & {
+  account_type?: string
+  closing_day?: number | null
+  payment_due_day?: number | null
+}
+
 interface Props {
-  banks: Bank[]
+  banks: ExtendedBank[]
   profile: { name: string | null; avatar_url: string | null } | null
   userEmail: string
 }
 
 export function SettingsClient({ banks, profile, userEmail }: Props) {
   const [showBankModal, setShowBankModal] = useState(false)
-  const [editingBank, setEditingBank] = useState<Bank | null>(null)
+  const [editingBank, setEditingBank] = useState<ExtendedBank | null>(null)
   const [selectedSlug, setSelectedSlug] = useState<string>(KNOWN_BANKS[0].slug)
   const [customName, setCustomName] = useState("")
   const [balance, setBalance] = useState("")
+  const [accountType, setAccountType] = useState<"checking" | "savings" | "credit_card">("checking")
+  const [closingDay, setClosingDay] = useState("")
+  const [paymentDueDay, setPaymentDueDay] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
@@ -30,10 +39,18 @@ export function SettingsClient({ banks, profile, userEmail }: Props) {
     setError("")
     try {
       const name = customName.trim() || selectedKnown?.name || ""
+      const creditCardFields = accountType === "credit_card"
+        ? {
+            closing_day: closingDay ? parseInt(closingDay) : null,
+            payment_due_day: paymentDueDay ? parseInt(paymentDueDay) : null,
+          }
+        : { closing_day: null, payment_due_day: null }
       if (editingBank) {
         await updateBank(editingBank.id, {
           name,
           current_balance: parseFloat(balance) || 0,
+          account_type: accountType,
+          ...creditCardFields,
         })
       } else {
         await createBank({
@@ -41,12 +58,17 @@ export function SettingsClient({ banks, profile, userEmail }: Props) {
           slug: selectedSlug,
           color: selectedKnown?.color ?? "#6B7280",
           current_balance: parseFloat(balance) || 0,
+          account_type: accountType,
+          ...creditCardFields,
         })
       }
       setShowBankModal(false)
       setEditingBank(null)
       setCustomName("")
       setBalance("")
+      setAccountType("checking")
+      setClosingDay("")
+      setPaymentDueDay("")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar banco")
     } finally {
@@ -54,11 +76,14 @@ export function SettingsClient({ banks, profile, userEmail }: Props) {
     }
   }
 
-  function openEditBank(bank: Bank) {
+  function openEditBank(bank: ExtendedBank) {
     setEditingBank(bank)
     setSelectedSlug(bank.slug)
     setCustomName(bank.name)
     setBalance(bank.current_balance.toString())
+    setAccountType((bank.account_type as "checking" | "savings" | "credit_card") ?? "checking")
+    setClosingDay(bank.closing_day?.toString() ?? "")
+    setPaymentDueDay(bank.payment_due_day?.toString() ?? "")
     setShowBankModal(true)
   }
 
@@ -85,7 +110,7 @@ export function SettingsClient({ banks, profile, userEmail }: Props) {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold text-white">Bancos</h2>
             <button
-              onClick={() => { setEditingBank(null); setCustomName(""); setBalance(""); setShowBankModal(true) }}
+              onClick={() => { setEditingBank(null); setCustomName(""); setBalance(""); setAccountType("checking"); setClosingDay(""); setPaymentDueDay(""); setShowBankModal(true) }}
               className="flex items-center gap-2 text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -106,14 +131,26 @@ export function SettingsClient({ banks, profile, userEmail }: Props) {
               >
                 <BankLogo slug={bank.slug} name={bank.name} size="md" />
                 <div className="flex-1 min-w-0">
-                  <p className={`font-medium text-sm ${bank.is_active ? "text-white" : "text-zinc-500"}`}>
-                    {bank.name}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className={`font-medium text-sm ${bank.is_active ? "text-white" : "text-zinc-500"}`}>
+                      {bank.name}
+                    </p>
+                    {bank.account_type === "credit_card" && (
+                      <span className="flex items-center gap-1 text-[10px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded-full">
+                        <CreditCard className="w-2.5 h-2.5" />
+                        Cartão
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-zinc-500">
-                    Saldo:{" "}
-                    <span className={bank.current_balance >= 0 ? "text-emerald-400" : "text-red-400"}>
-                      R$ {bank.current_balance.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </span>
+                    {bank.account_type === "credit_card"
+                      ? `Fecha dia ${bank.closing_day ?? "—"} · Vence dia ${bank.payment_due_day ?? "—"}`
+                      : <>Saldo:{" "}
+                          <span className={bank.current_balance >= 0 ? "text-emerald-400" : "text-red-400"}>
+                            R$ {bank.current_balance.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                          </span>
+                        </>
+                    }
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -206,16 +243,65 @@ export function SettingsClient({ banks, profile, userEmail }: Props) {
               )}
 
               <div>
-                <label className="block text-xs text-zinc-400 mb-1.5">Saldo atual (R$)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={balance}
-                  onChange={(e) => setBalance(e.target.value)}
-                  placeholder="0,00"
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
-                />
+                <label className="block text-xs text-zinc-400 mb-1.5">Tipo de conta</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["checking", "savings", "credit_card"] as const).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setAccountType(type)}
+                      className={`py-2 rounded-lg border text-xs transition-colors ${
+                        accountType === type
+                          ? "border-blue-500 bg-blue-500/10 text-white"
+                          : "border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                      }`}
+                    >
+                      {type === "checking" ? "Conta Corrente" : type === "savings" ? "Poupança" : "Cartão de Crédito"}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {accountType === "credit_card" ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1.5">Dia de fechamento</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={closingDay}
+                      onChange={(e) => setClosingDay(e.target.value)}
+                      placeholder="Ex: 20"
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1.5">Dia de vencimento</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={paymentDueDay}
+                      onChange={(e) => setPaymentDueDay(e.target.value)}
+                      placeholder="Ex: 5"
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1.5">Saldo atual (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={balance}
+                    onChange={(e) => setBalance(e.target.value)}
+                    placeholder="0,00"
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              )}
 
               {error && <p className="text-red-400 text-xs">{error}</p>}
 
