@@ -339,11 +339,12 @@ export async function getInvestmentSettings() {
   const supabase = await createClient()
   const { data } = await supabase
     .from("investment_settings")
-    .select("goal_amount, initial_balance")
+    .select("goal_amount, initial_balance, target_date")
     .maybeSingle()
   return {
     goalAmount: data?.goal_amount ?? 0,
     initialBalance: data?.initial_balance ?? 0,
+    targetDate: (data?.target_date as string | null) ?? null,
   }
 }
 

@@ -53,13 +53,16 @@ function NavLink({
   label: string;
 }) {
   const pathname = usePathname();
+  const { open, animate } = useSidebar();
   const isActive = pathname === href;
+  const collapsed = animate && !open;
 
   return (
     <Link
       href={href}
       className={cn(
         "flex items-center gap-2 px-2 py-2 rounded-lg transition-colors group/sidebar",
+        collapsed && "justify-center gap-0",
         isActive
           ? "bg-blue-600/10 border border-blue-500/20"
           : "border border-transparent hover:bg-zinc-800/50"
@@ -89,13 +92,16 @@ function NavLink({
 
 function SettingsLink() {
   const pathname = usePathname();
+  const { open, animate } = useSidebar();
   const isActive = pathname === "/dashboard/settings";
+  const collapsed = animate && !open;
 
   return (
     <Link
       href="/dashboard/settings"
       className={cn(
         "flex items-center gap-2 px-2 py-2 rounded-lg transition-colors border group/sidebar",
+        collapsed && "justify-center gap-0",
         isActive
           ? "bg-blue-600/10 border-blue-500/20 text-blue-400"
           : "border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
@@ -108,11 +114,17 @@ function SettingsLink() {
 }
 
 function LogoutButton() {
+  const { open, animate } = useSidebar();
+  const collapsed = animate && !open;
+
   return (
     <form action="/api/auth/signout" method="POST">
       <button
         type="submit"
-        className="flex items-center gap-2 px-2 py-2 w-full rounded-lg transition-colors border border-transparent text-zinc-500 hover:text-red-400 hover:bg-red-500/5 group/sidebar"
+        className={cn(
+          "flex items-center gap-2 px-2 py-2 w-full rounded-lg transition-colors border border-transparent text-zinc-500 hover:text-red-400 hover:bg-red-500/5 group/sidebar",
+          collapsed && "justify-center gap-0"
+        )}
       >
         <LogOut className="h-4 w-4 shrink-0 transition-colors group-hover/sidebar:text-red-400" />
         <AnimatedLabel className="text-sm">Sair da conta</AnimatedLabel>
@@ -122,10 +134,12 @@ function LogoutButton() {
 }
 
 function UserAvatar({ email }: { email: string }) {
+  const { open, animate } = useSidebar();
   const initial = email[0]?.toUpperCase() ?? "U";
+  const collapsed = animate && !open;
 
   return (
-    <div className="flex items-center gap-2 px-2 py-2">
+    <div className={cn("flex items-center gap-2 px-2 py-2", collapsed && "justify-center gap-0")}>
       <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0 shadow-md shadow-blue-600/20">
         {initial}
       </div>
@@ -143,7 +157,7 @@ function AppSidebarContent({ userEmail }: { userEmail: string }) {
     <SidebarBody className="justify-between gap-6">
       <div className="flex flex-1 flex-col overflow-x-hidden overflow-y-auto">
         {/* Logo */}
-        <div className="flex items-center gap-2 px-1 py-1 mb-6">
+        <div className={cn("flex items-center gap-2 px-1 py-1 mb-6", !open && animate && "justify-center gap-0")}>
           <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/20 shrink-0">
             <TrendingUp className="w-3.5 h-3.5 text-white" />
           </div>

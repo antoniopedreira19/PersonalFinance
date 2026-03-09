@@ -18,6 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/Select"
+import { NumberInput } from "@/components/ui/number-input"
 import { createTransaction } from "@/lib/actions/transactions"
 import { upsertInvestmentSettings } from "@/lib/actions/goals"
 import type { Bank, Category } from "@/lib/supabase/types"
@@ -35,6 +36,7 @@ interface InvestmentTransaction {
 interface Settings {
   goalAmount: number
   initialBalance: number
+  targetDate: string | null
 }
 
 interface Props {
@@ -98,6 +100,9 @@ function ChartTooltip({ active, payload, label }: {
 function SettingsModal({ settings, onClose }: { settings: Settings; onClose: () => void }) {
   const [goal, setGoal] = useState(settings.goalAmount > 0 ? String(settings.goalAmount) : "")
   const [initial, setInitial] = useState(settings.initialBalance > 0 ? String(settings.initialBalance) : "")
+  const [targetDate, setTargetDate] = useState<Date | undefined>(
+    settings.targetDate ? new Date(settings.targetDate + "T00:00:00") : undefined
+  )
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState("")
 
@@ -105,10 +110,11 @@ function SettingsModal({ settings, onClose }: { settings: Settings; onClose: () 
     e.preventDefault()
     const goalAmt = parseFloat(goal.replace(",", ".")) || 0
     const initAmt = parseFloat(initial.replace(",", ".")) || 0
+    const dateStr = targetDate ? format(targetDate, "yyyy-MM-dd") : null
     setError("")
     startTransition(async () => {
       try {
-        await upsertInvestmentSettings(goalAmt, initAmt)
+        await upsertInvestmentSettings(goalAmt, initAmt, dateStr)
         onClose()
       } catch (err) {
         setError(err instanceof Error ? err.message : "Erro ao salvar")
@@ -128,29 +134,61 @@ function SettingsModal({ settings, onClose }: { settings: Settings; onClose: () 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs text-zinc-400 mb-1.5">Saldo inicial (R$)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
+            <NumberInput
               value={initial}
-              onChange={(e) => setInitial(e.target.value)}
+              onChange={setInitial}
+              step={0.01}
+              min={0}
               placeholder="Quanto você já tem investido"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
             />
             <p className="text-[10px] text-zinc-600 mt-1">Patrimônio investido antes de usar este app</p>
           </div>
           <div>
             <label className="block text-xs text-zinc-400 mb-1.5">Meta de patrimônio (R$)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
+            <NumberInput
               value={goal}
-              onChange={(e) => setGoal(e.target.value)}
+              onChange={setGoal}
+              step={0.01}
+              min={0}
               placeholder="Ex: 1.000.000,00"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
             />
             <p className="text-[10px] text-zinc-600 mt-1">Quanto você quer acumular no total</p>
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-400 mb-1.5">Data alvo (opcional)</label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    "flex h-9 w-full items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 text-sm text-left transition-colors hover:border-zinc-600",
+                    !targetDate && "text-zinc-500"
+                  )}
+                >
+                  <CalendarIcon className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+                  {targetDate ? format(targetDate, "MMMM 'de' yyyy", { locale: ptBR }) : "Selecionar mês/ano"}
+                  {targetDate && (
+                    <span
+                      className="ml-auto text-zinc-600 hover:text-zinc-300 transition-colors"
+                      onClick={(e) => { e.stopPropagation(); setTargetDate(undefined) }}
+                    >
+                      <X className="w-3 h-3" />
+                    </span>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={targetDate}
+                  onSelect={setTargetDate}
+                  locale={ptBR}
+                  initialFocus
+                  fromDate={new Date()}
+                />
+              </PopoverContent>
+            </Popover>
+            <p className="text-[10px] text-zinc-600 mt-1">Quando você quer atingir a meta</p>
           </div>
           {error && <p className="text-red-400 text-xs">{error}</p>}
           <div className="flex gap-3 pt-1">
@@ -234,15 +272,13 @@ function AporteModal({ banks, categories, onClose }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-zinc-400 mb-1">Valor (R$)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
+              <NumberInput
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={setAmount}
+                step={0.01}
+                min={0.01}
                 required
                 placeholder="0,00"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
               />
             </div>
             <div>
@@ -327,6 +363,18 @@ export function GoalsClient({ settings, transactions, banks, categories }: Props
   }, [transactions])
 
   const avgPMT = monthlyMap.size > 0 ? totalInvested / monthlyMap.size : 0
+
+  // Target date breakdown
+  const targetDateBreakdown = useMemo(() => {
+    if (!settings.targetDate || !settings.goalAmount || currentBalance >= settings.goalAmount) return null
+    const now = new Date()
+    const target = new Date(settings.targetDate + "T00:00:00")
+    const monthsRemaining = (target.getFullYear() - now.getFullYear()) * 12 + (target.getMonth() - now.getMonth())
+    if (monthsRemaining <= 0) return null
+    const remaining = settings.goalAmount - currentBalance
+    const requiredPMT = remaining / monthsRemaining
+    return { monthsRemaining, remaining, requiredPMT, target }
+  }, [settings.targetDate, settings.goalAmount, currentBalance])
 
   // Last 12 months chart data
   const chartData = useMemo(() => {
@@ -495,6 +543,79 @@ export function GoalsClient({ settings, transactions, banks, categories }: Props
                 })()}
               </p>
             )}
+          </div>
+        )}
+
+        {/* ── Target date breakdown */}
+        {targetDateBreakdown && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-medium text-white">Plano por Prazo</h3>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Meta em{" "}
+                  <span className="text-blue-400">
+                    {format(targetDateBreakdown.target, "MMMM 'de' yyyy", { locale: ptBR })}
+                  </span>
+                  {" "}— {targetDateBreakdown.monthsRemaining} {targetDateBreakdown.monthsRemaining === 1 ? "mês restante" : "meses restantes"}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSettings(true)}
+                className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors flex items-center gap-1"
+              >
+                <CalendarIcon className="w-3 h-3" />
+                Alterar data
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4">
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2">Falta atingir</p>
+                <p className="text-lg font-bold font-mono text-white">R$ {fmtBRL(targetDateBreakdown.remaining)}</p>
+                <p className="text-[10px] text-zinc-600 mt-1">
+                  {((targetDateBreakdown.remaining / settings.goalAmount) * 100).toFixed(1)}% da meta
+                </p>
+              </div>
+
+              <div className="bg-violet-500/5 border border-violet-500/20 rounded-xl p-4">
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2">Aporte necessário</p>
+                <p className="text-lg font-bold font-mono text-violet-300">R$ {fmtBRL(targetDateBreakdown.requiredPMT)}</p>
+                <p className="text-[10px] text-zinc-600 mt-1">por mês (sem juros)</p>
+              </div>
+
+              <div className={cn(
+                "rounded-xl p-4 border",
+                avgPMT >= targetDateBreakdown.requiredPMT
+                  ? "bg-emerald-500/5 border-emerald-500/20"
+                  : "bg-amber-500/5 border-amber-500/20"
+              )}>
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2">Ritmo atual</p>
+                <p className={cn(
+                  "text-lg font-bold font-mono",
+                  avgPMT >= targetDateBreakdown.requiredPMT ? "text-emerald-300" : "text-amber-300"
+                )}>
+                  R$ {fmtBRL(avgPMT)}
+                </p>
+                <p className={cn(
+                  "text-[10px] mt-1",
+                  avgPMT >= targetDateBreakdown.requiredPMT ? "text-emerald-600" : "text-amber-600"
+                )}>
+                  {avgPMT >= targetDateBreakdown.requiredPMT
+                    ? `+R$ ${fmtBRL(avgPMT - targetDateBreakdown.requiredPMT)}/mês acima`
+                    : `Faltam R$ ${fmtBRL(targetDateBreakdown.requiredPMT - avgPMT)}/mês`}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {settings.targetDate && !targetDateBreakdown && settings.goalAmount > 0 && currentBalance >= settings.goalAmount && (
+          <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 flex items-center gap-3">
+            <Check className="w-5 h-5 text-emerald-400 shrink-0" />
+            <p className="text-sm text-emerald-300 font-medium">
+              Parabéns! Você já atingiu sua meta de R$ {fmtBRL(settings.goalAmount)}.
+            </p>
           </div>
         )}
 

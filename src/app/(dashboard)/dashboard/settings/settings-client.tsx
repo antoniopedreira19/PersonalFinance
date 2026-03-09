@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Plus, Pencil, Trash2, Power, CreditCard } from "lucide-react"
+import { NumberInput } from "@/components/ui/number-input"
 import { KNOWN_BANKS } from "@/lib/banks"
 import { BankLogo } from "@/components/dashboard/bank-logo"
 import { createBank, updateBank, deleteBank } from "@/lib/actions/banks"
@@ -266,39 +267,35 @@ export function SettingsClient({ banks, profile, userEmail }: Props) {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-zinc-400 mb-1.5">Dia de fechamento</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="31"
+                    <NumberInput
                       value={closingDay}
-                      onChange={(e) => setClosingDay(e.target.value)}
+                      onChange={setClosingDay}
+                      min={1}
+                      max={31}
+                      step={1}
                       placeholder="Ex: 20"
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
                     />
                   </div>
                   <div>
                     <label className="block text-xs text-zinc-400 mb-1.5">Dia de vencimento</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="31"
+                    <NumberInput
                       value={paymentDueDay}
-                      onChange={(e) => setPaymentDueDay(e.target.value)}
+                      onChange={setPaymentDueDay}
+                      min={1}
+                      max={31}
+                      step={1}
                       placeholder="Ex: 5"
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
                     />
                   </div>
                 </div>
               ) : (
                 <div>
                   <label className="block text-xs text-zinc-400 mb-1.5">Saldo atual (R$)</label>
-                  <input
-                    type="number"
-                    step="0.01"
+                  <NumberInput
                     value={balance}
-                    onChange={(e) => setBalance(e.target.value)}
+                    onChange={setBalance}
+                    step={0.01}
                     placeholder="0,00"
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
               )}

@@ -6,6 +6,7 @@ import { DollarSign } from "lucide-react"
 import { NumberTicker } from "@/components/aceternity/number-ticker"
 import { BorderBeam } from "@/components/aceternity/border-beam"
 import { cn } from "@/lib/utils"
+import { NumberInput } from "@/components/ui/number-input"
 import { upsertMonthlyCashBalance } from "@/lib/actions/cash-balance"
 
 interface Props {
@@ -61,17 +62,13 @@ export function CashBalanceStat({ value, month, compact = false }: Props) {
 
       {editing ? (
         <div className="space-y-2">
-          <div className="flex items-center gap-1">
-            <span className="text-sm text-zinc-400">R$</span>
-            <input
-              type="number"
-              step="0.01"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              autoFocus
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500 w-full"
-            />
-          </div>
+          <NumberInput
+            value={input}
+            onChange={setInput}
+            step={0.01}
+            autoFocus
+            placeholder="0,00"
+          />
           <div className="flex gap-1.5">
             <button
               onClick={handleSave}

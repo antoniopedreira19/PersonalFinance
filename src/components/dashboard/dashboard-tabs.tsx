@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/Select"
+import { NumberInput } from "@/components/ui/number-input"
 import { createTransaction, createInstallmentTransaction } from "@/lib/actions/transactions"
 import { createCategory, updateCategory, deleteCategory } from "@/lib/actions/categories"
 import { createRecurringTemplate, toggleRecurringTemplate } from "@/lib/actions/recurring"
@@ -231,15 +232,13 @@ function TransactionModal({ banks, categories, recurringTemplates, onClose, onVi
                 </div>
                 <div>
                   <label className="block text-xs text-zinc-400 mb-1">Valor (R$)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
+                  <NumberInput
                     value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    onChange={setAmount}
+                    step={0.01}
+                    min={0.01}
                     required
                     placeholder="0,00"
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div>
@@ -278,13 +277,12 @@ function TransactionModal({ banks, categories, recurringTemplates, onClose, onVi
                 {selectedSubtype === "installment_expense" && (
                   <div className="col-span-2">
                     <label className="block text-xs text-zinc-400 mb-1">Número de parcelas</label>
-                    <input
-                      type="number"
-                      min="2"
-                      max="60"
+                    <NumberInput
                       value={installments}
-                      onChange={(e) => setInstallments(e.target.value)}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                      onChange={setInstallments}
+                      min={2}
+                      max={60}
+                      step={1}
                     />
                   </div>
                 )}

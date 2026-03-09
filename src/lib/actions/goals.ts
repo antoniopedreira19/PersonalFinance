@@ -20,7 +20,7 @@ export async function upsertInvestmentGoal(month: string, targetAmount: number) 
   revalidatePath("/dashboard")
 }
 
-export async function upsertInvestmentSettings(goalAmount: number, initialBalance: number) {
+export async function upsertInvestmentSettings(goalAmount: number, initialBalance: number, targetDate: string | null) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error("Não autenticado")
@@ -28,7 +28,7 @@ export async function upsertInvestmentSettings(goalAmount: number, initialBalanc
   const { error } = await supabase
     .from("investment_settings")
     .upsert(
-      { user_id: user.id, goal_amount: goalAmount, initial_balance: initialBalance },
+      { user_id: user.id, goal_amount: goalAmount, initial_balance: initialBalance, target_date: targetDate },
       { onConflict: "user_id" }
     )
 

@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Plus, Trash2, TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { BankLogo } from "@/components/dashboard/bank-logo"
 import { createTransaction, createInstallmentTransaction, deleteTransaction } from "@/lib/actions/transactions"
+import { NumberInput } from "@/components/ui/number-input"
 import type { Bank, Category, TransactionWithRelations } from "@/lib/supabase/types"
 
 const SUBTYPES = [
@@ -234,27 +235,24 @@ export function TransactionsClient({ transactions, banks, categories }: Props) {
                   <label className="block text-xs text-zinc-400 mb-1.5">
                     Valor (R$){subtype === "installment" ? " total" : ""}
                   </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
+                  <NumberInput
                     value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    onChange={setAmount}
+                    step={0.01}
+                    min={0.01}
                     required
                     placeholder="0,00"
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 {subtype === "installment" && (
                   <div className="w-28">
                     <label className="block text-xs text-zinc-400 mb-1.5">Parcelas</label>
-                    <input
-                      type="number"
-                      min="2"
-                      max="60"
+                    <NumberInput
                       value={installments}
-                      onChange={(e) => setInstallments(e.target.value)}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                      onChange={setInstallments}
+                      min={2}
+                      max={60}
+                      step={1}
                     />
                   </div>
                 )}
