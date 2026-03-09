@@ -271,6 +271,7 @@ function TransactionModal({ banks, categories, recurringTemplates, onClose, onVi
                   {isRecurringMode && date && (
                     <p className="text-[10px] text-blue-400/70 mt-1">
                       Recorrência todo dia {date.getDate()} do mês
+                      {date.getDate() > 28 && " (ajustado ao último dia em meses curtos)"}
                     </p>
                   )}
                 </div>

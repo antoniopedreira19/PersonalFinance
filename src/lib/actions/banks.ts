@@ -14,7 +14,7 @@ export async function createBank(data: Omit<BankInsert, "user_id"> & { account_t
   revalidatePath("/dashboard/settings")
 }
 
-export async function updateBank(id: string, data: { name?: string; current_balance?: number; is_active?: boolean; account_type?: string; closing_day?: number | null; payment_due_day?: number | null }) {
+export async function updateBank(id: string, data: { name?: string; current_balance?: number; balance_date?: string; is_active?: boolean; account_type?: string; closing_day?: number | null; payment_due_day?: number | null }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error("Não autenticado")

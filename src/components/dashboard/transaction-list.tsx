@@ -9,7 +9,7 @@ export function TransactionList({ transactions }: { transactions: TransactionWit
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-sm font-medium text-white">Transações Recentes</h3>
-          <p className="text-xs text-zinc-500 mt-0.5">{transactions.length} nos últimos 3 dias</p>
+          <p className="text-xs text-zinc-500 mt-0.5">{transactions.length} nos últimos 5 dias</p>
         </div>
         <Link href="/dashboard/transactions" className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
           Ver todas →
@@ -17,7 +17,7 @@ export function TransactionList({ transactions }: { transactions: TransactionWit
       </div>
 
       {transactions.length === 0 ? (
-        <div className="py-8 text-center text-zinc-600 text-sm">Nenhuma transação nos últimos 3 dias</div>
+        <div className="py-8 text-center text-zinc-600 text-sm">Nenhuma transação nos últimos 5 dias</div>
       ) : (
         <div className="space-y-0.5">
           {transactions.map((tx) => (

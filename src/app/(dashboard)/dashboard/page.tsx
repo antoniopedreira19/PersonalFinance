@@ -12,7 +12,6 @@ import { DashboardActionTabs } from "@/components/dashboard/dashboard-tabs"
 import {
   getMonthlyProjection,
   getCreditCardFaturas,
-  getMonthlyCashBalance,
   getRecentTransactions,
   getCategoryBreakdown,
   getDailyChartData,
@@ -42,6 +41,8 @@ async function ChartSection({
     </div>
   )
 }
+
+type Reconciliation = { balance: number; date: string }
 
 async function BottomSection({
   txPromise,
@@ -131,22 +132,33 @@ export default async function DashboardPage({
   const monthLabel = `${MONTH_LABELS[mon - 1]} ${year}`
 
   // Fast queries — await immediately so header + stats render without delay
-  const [projection, faturas, cashBalance, banks, categories, recurringTemplates] = await Promise.all([
+  const [projection, faturas, banks, categories, recurringTemplates] = await Promise.all([
     getMonthlyProjection(monthDate),
     getCreditCardFaturas(),
-    getMonthlyCashBalance(monthParam),
     getBanks(),
     getCategories(),
     getRecurringTemplates(),
   ])
 
+  const cashBanks = banks.filter((b) => b.is_active && b.account_type !== "credit_card")
+  const cashBalance = cashBanks.reduce((s, b) => s + (Number(b.current_balance) ?? 0), 0)
+
+  // Reconciliation anchor: total cash balance on the latest balance_date among cash banks
+  const reconciliation: Reconciliation | undefined = cashBanks.length > 0 ? {
+    balance: cashBalance,
+    date: cashBanks.reduce((latest, b) => {
+      const d = b.balance_date ?? ""
+      return d > latest ? d : latest
+    }, ""),
+  } : undefined
+
   // Heavy queries — start but don't await; stream via Suspense
-  const chartDataPromise = getDailyChartData(monthDate)
+  const chartDataPromise = getDailyChartData(monthDate, reconciliation)
   const recentTxPromise = getRecentTransactions()
   const categoryBreakdownPromise = getCategoryBreakdown(monthDate)
 
   const totalFatura = faturas.reduce((s, f) => s + f.fatura, 0)
-  const resultado = cashBalance + projection.totalIncome - projection.totalFixed - projection.totalInstallments - projection.totalDaily
+  const resultado = cashBalance - projection.totalFixed - projection.totalInstallments - projection.totalDaily
 
   return (
     <div className="p-8">
@@ -156,14 +168,15 @@ export default async function DashboardPage({
 
       {/* Stats — 7 cards em linha única */}
       <div className="grid grid-cols-7 gap-3 mb-6">
-        <CashBalanceStat value={cashBalance} month={monthParam} compact />
+        <CashBalanceStat banks={banks} compact />
         <ClickableStatCard
-          title="Receitas do Mês"
-          value={projection.totalIncome}
+          title="Receita A Receber"
+          value={projection.totalReceber}
           icon="TrendingUp"
           variant="green"
-          items={projection.incomeItems}
-          itemsLabel={`${projection.incomeItems.filter(i => i.isProjected).length} previsto(s) · ${projection.incomeItems.filter(i => !i.isProjected).length} realizado(s)`}
+          items={projection.receberItems}
+          itemsLabel={`${projection.receberItems.filter(i => i.isProjected).length} previsto(s) · ${projection.receberItems.filter(i => !i.isProjected).length} pendente(s)`}
+          isIncome
           compact
         />
         <ClickableStatCard
@@ -182,6 +195,7 @@ export default async function DashboardPage({
           variant="red"
           items={projection.installmentItems}
           itemsLabel="Parcelas do mês"
+          groupByBank
           compact
         />
         <ClickableStatCard

@@ -18,6 +18,7 @@ export type ProjectionItem = {
   subtype?: string | null
   installment_number?: number | null
   total_installments?: number | null
+  is_paid?: boolean
   isProjected?: true
   banks: { id: string; name: string; color: string } | null
   categories?: { id: string; name: string; color: string; icon: string } | null
@@ -30,7 +31,7 @@ export async function getMonthlyProjection(month: Date) {
   const [{ data: transactions }, { data: templates }] = await Promise.all([
     supabase
       .from("transactions")
-      .select("id, type, subtype, amount, date, description, recurring_template_id, installment_number, total_installments, banks(id, name, color), categories(id, name, color, icon)")
+      .select("id, type, subtype, amount, date, description, is_paid, recurring_template_id, installment_number, total_installments, banks(id, name, color), categories(id, name, color, icon)")
       .gte("date", start)
       .lte("date", end),
     supabase
@@ -45,11 +46,12 @@ export async function getMonthlyProjection(month: Date) {
   )
   const monthPrefix = start.slice(0, 7)
 
-  const incomeTransactions = (transactions ?? []).filter((t) => t.type === "income")
+  const allIncomeTransactions = (transactions ?? []).filter((t) => t.type === "income")
+  const unpaidIncomeTransactions = allIncomeTransactions.filter((t) => !t.is_paid)
   const projectedIncomeTemplates = (templates ?? [])
     .filter((t) => t.type === "income" && !coveredTemplateIds.has(t.id))
     .map((t) => ({ ...t, isProjected: true as const, date: `${monthPrefix}-${String(t.day_of_month).padStart(2, "0")}`, subtype: "recurring", categories: null }))
-  const totalIncome = [...incomeTransactions, ...projectedIncomeTemplates].reduce((s, t) => s + t.amount, 0)
+  const totalReceber = [...unpaidIncomeTransactions, ...projectedIncomeTemplates].reduce((s, t) => s + t.amount, 0)
 
   const fixedTransactions = (transactions ?? []).filter((t) => t.type === "expense" && t.recurring_template_id !== null)
   const projectedFixedTemplates = (templates ?? [])
@@ -66,11 +68,11 @@ export async function getMonthlyProjection(month: Date) {
   const totalDaily = dailyTransactions.reduce((s, t) => s + t.amount, 0)
 
   return {
-    totalIncome,
+    totalReceber,
     totalFixed,
     totalInstallments,
     totalDaily,
-    incomeItems: [...incomeTransactions, ...projectedIncomeTemplates] as unknown as ProjectionItem[],
+    receberItems: [...unpaidIncomeTransactions, ...projectedIncomeTemplates] as unknown as ProjectionItem[],
     fixedItems: [...fixedTransactions, ...projectedFixedTemplates] as unknown as ProjectionItem[],
     installmentItems: installmentTransactions as unknown as ProjectionItem[],
     dailyItems: dailyTransactions as unknown as ProjectionItem[],
@@ -139,16 +141,19 @@ export async function getMonthlyCashBalance(month: string): Promise<number> {
 export async function getRecentTransactions(): Promise<TransactionWithRelations[]> {
   const supabase = await createClient()
   const today = new Date()
-  const threeDaysAgo = new Date(today)
-  threeDaysAgo.setDate(today.getDate() - 3)
-  const from = threeDaysAgo.toISOString().slice(0, 10)
+  const fiveDaysAgo = new Date(today)
+  fiveDaysAgo.setDate(today.getDate() - 4) // today + 4 previous days = 5 days total
+  const from = fiveDaysAgo.toISOString().slice(0, 10)
+  const to = today.toISOString().slice(0, 10)
 
   const { data } = await supabase
     .from("transactions")
     .select("id, description, amount, type, subtype, date, notes, bank_id, category_id, user_id, created_at, installment_number, total_installments, installment_group_id, recurring_template_id, banks(id, name, slug, color), categories(id, name, color, icon)")
     .gte("date", from)
+    .lte("date", to)
     .order("date", { ascending: false })
-    .limit(20)
+    .order("created_at", { ascending: false })
+    .limit(10)
 
   return (data ?? []) as unknown as TransactionWithRelations[]
 }
@@ -181,7 +186,10 @@ export async function getCategoryBreakdown(month?: Date) {
     .sort((a, b) => b.amount - a.amount)
 }
 
-export async function getDailyChartData(month: Date) {
+export async function getDailyChartData(
+  month: Date,
+  reconciliation?: { balance: number; date: string },
+) {
   const supabase = await createClient()
   const { start, end } = monthRange(month)
   const lastDay = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
@@ -224,11 +232,33 @@ export async function getDailyChartData(month: Date) {
     else entry.expenses += tpl.amount
   }
 
-  let cumBalance = 0
-  return Array.from(dayMap.entries()).map(([day, { income, expenses }]) => {
-    cumBalance += income - expenses
-    return { day: String(day), income, expenses, balance: cumBalance }
-  })
+  // Build prefix net: prefixNet[d] = cumulative net at end of day d (index 0 = before day 1)
+  const prefixNet: number[] = [0]
+  for (let d = 1; d <= lastDay; d++) {
+    const { income, expenses } = dayMap.get(d)!
+    prefixNet.push(prefixNet[d - 1] + income - expenses)
+  }
+
+  // Determine anchor: which day index and balance to anchor on
+  let anchorDay = 0 // default: before month start
+  if (reconciliation) {
+    const recDate = new Date(reconciliation.date + "T00:00:00")
+    if (
+      recDate.getFullYear() === month.getFullYear() &&
+      recDate.getMonth() === month.getMonth()
+    ) {
+      anchorDay = Math.min(recDate.getDate(), lastDay)
+    }
+  }
+
+  const offset = reconciliation ? reconciliation.balance - prefixNet[anchorDay] : 0
+
+  return Array.from(dayMap.entries()).map(([day, { income, expenses }]) => ({
+    day: String(day),
+    income,
+    expenses,
+    balance: prefixNet[day] + offset,
+  }))
 }
 
 // Single query for all months instead of N sequential queries
@@ -301,7 +331,7 @@ export async function getBanks() {
   const supabase = await createClient()
   const { data } = await supabase
     .from("banks")
-    .select("id, name, slug, color, current_balance, is_active, account_type, closing_day, payment_due_day, created_at, user_id")
+    .select("id, name, slug, color, current_balance, balance_date, is_active, account_type, closing_day, payment_due_day, created_at, user_id")
     .order("created_at")
   return data ?? []
 }

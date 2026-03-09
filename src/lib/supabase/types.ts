@@ -11,6 +11,7 @@ export type Database = {
     Tables: {
       banks: {
         Row: {
+          balance_date: string
           color: string
           created_at: string
           current_balance: number
@@ -21,6 +22,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          balance_date?: string
           color?: string
           created_at?: string
           current_balance?: number
@@ -31,6 +33,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          balance_date?: string
           color?: string
           created_at?: string
           current_balance?: number

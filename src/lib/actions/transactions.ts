@@ -62,6 +62,45 @@ export async function updateTransaction(id: string, data: Partial<TransactionIns
   revalidatePath("/dashboard/transactions")
 }
 
+export async function markIncomePaid(transactionId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error("Não autenticado")
+
+  const { data: tx } = await supabase
+    .from("transactions")
+    .select("amount, bank_id")
+    .eq("id", transactionId)
+    .eq("user_id", user.id)
+    .single()
+  if (!tx) throw new Error("Transação não encontrada")
+
+  await supabase
+    .from("transactions")
+    .update({ is_paid: true })
+    .eq("id", transactionId)
+    .eq("user_id", user.id)
+
+  if (tx.bank_id) {
+    const { data: bank } = await supabase
+      .from("banks")
+      .select("current_balance")
+      .eq("id", tx.bank_id)
+      .eq("user_id", user.id)
+      .single()
+    if (bank) {
+      await supabase
+        .from("banks")
+        .update({ current_balance: (bank.current_balance ?? 0) + tx.amount })
+        .eq("id", tx.bank_id)
+        .eq("user_id", user.id)
+    }
+  }
+
+  revalidatePath("/dashboard")
+  revalidatePath("/dashboard/transactions")
+}
+
 export async function deleteTransaction(id: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
