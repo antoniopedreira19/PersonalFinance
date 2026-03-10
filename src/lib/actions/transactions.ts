@@ -90,7 +90,7 @@ export async function updateTransaction(id: string, data: Partial<TransactionIns
       if (error) throw new Error(error.message)
 
       // Update remaining fields (non bank_id) on the single transaction
-      const { bank_id: _, ...rest } = data
+      const { bank_id: _bankId, ...rest } = data
       if (Object.keys(rest).length > 0) {
         const { error: e2 } = await supabase.from("transactions").update(rest).eq("id", id).eq("user_id", user.id)
         if (e2) throw new Error(e2.message)

@@ -418,7 +418,6 @@ function ItemsModal({
   banks?: BankOption[];
   onClose: () => void;
 }) {
-  const router = useRouter();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [localItems, setLocalItems] = useState(items);
   const sorted = [...localItems].sort((a, b) => a.date.localeCompare(b.date));

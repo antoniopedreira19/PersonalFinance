@@ -127,7 +127,6 @@ export function SpendingScenarios({ totalIncome, totalExpenses }: Props) {
   const barFill = Math.min(ratio, 110) / 110 * 100
   const dotPos = Math.min(barFill, 98.5)
   const hasData = totalIncome > 0
-  const savings = totalIncome - totalExpenses
 
   return (
     <>
