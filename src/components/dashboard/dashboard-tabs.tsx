@@ -6,7 +6,7 @@ import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import {
   Plus, X,
-  TrendingUp, RefreshCw, Receipt, CreditCard, Wallet, BarChart2,
+  TrendingUp, RefreshCw, Receipt, CreditCard, Wallet, BarChart2, Sparkles,
   Pencil, Trash2, Check, CalendarIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -14,6 +14,7 @@ import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  SelectGroup, SelectLabel, SelectSeparator,
 } from "@/components/Select"
 import { NumberInput } from "@/components/ui/number-input"
 import { createTransaction, createInstallmentTransaction } from "@/lib/actions/transactions"
@@ -61,7 +62,8 @@ const SUBTYPE_OPTIONS: SubtypeOption[] = [
   { id: "fixed_expense", label: "Despesa Fixa", icon: <Receipt className="w-4 h-4" />, type: "expense", subtype: "fixed" },
   { id: "installment_expense", label: "Despesa Parcelada", icon: <CreditCard className="w-4 h-4" />, type: "expense", subtype: "installment" },
   { id: "daily_expense", label: "Despesa Avulsa", icon: <Wallet className="w-4 h-4" />, type: "expense", subtype: "daily" },
-  { id: "investment", label: "Investimento", icon: <BarChart2 className="w-4 h-4" />, type: "investment", subtype: "investment" },
+  { id: "investment", label: "Aporte", icon: <BarChart2 className="w-4 h-4" />, type: "investment", subtype: "investment" },
+  { id: "investment_yield", label: "Rendimento", icon: <Sparkles className="w-4 h-4" />, type: "investment", subtype: "yield" },
 ]
 
 const SUBTYPE_COLORS: Record<string, string> = {
@@ -71,6 +73,7 @@ const SUBTYPE_COLORS: Record<string, string> = {
   installment_expense: "text-orange-400 border-orange-500/30 bg-orange-500/5 data-[selected=true]:bg-orange-500/15 data-[selected=true]:border-orange-400/50",
   daily_expense: "text-zinc-400 border-zinc-600/40 bg-zinc-800/50 data-[selected=true]:bg-zinc-700/60 data-[selected=true]:border-zinc-500/60",
   investment: "text-violet-400 border-violet-500/30 bg-violet-500/5 data-[selected=true]:bg-violet-500/15 data-[selected=true]:border-violet-400/50",
+  investment_yield: "text-teal-400 border-teal-500/30 bg-teal-500/5 data-[selected=true]:bg-teal-500/15 data-[selected=true]:border-teal-400/50",
 }
 
 function TransactionModal({ banks, categories, recurringTemplates, onClose, onViewRecurring }: {
@@ -95,8 +98,14 @@ function TransactionModal({ banks, categories, recurringTemplates, onClose, onVi
 
   const selected = SUBTYPE_OPTIONS.find((o) => o.id === selectedSubtype)
   const isRecurringMode = selectedSubtype === "recurring_income" || selectedSubtype === "fixed_expense"
+  const isInvestmentType = selected?.type === "investment"
+  const isYield = selectedSubtype === "investment_yield"
+  // For yield: only show savings banks; for aporte: show all banks
+  const visibleBanks = isYield
+    ? banks.filter((b) => b.account_type === "savings")
+    : banks
   const filteredCategories = categories.filter((c) =>
-    selected ? c.type === (selected.type === "investment" ? "expense" : selected.type) : true
+    selected ? c.type === (isInvestmentType ? "expense" : selected.type) : true
   )
   const filteredTemplates = recurringTemplates.filter((t) =>
     selected ? t.type === selected.type : false
@@ -139,7 +148,7 @@ function TransactionModal({ banks, categories, recurringTemplates, onClose, onVi
     const amt = parseFloat(amount)
     if (isNaN(amt) || amt <= 0) { setError("Valor inválido"); return }
     if (!bankId) { setError("Selecione um banco"); return }
-    if (!categoryId) { setError("Selecione uma categoria"); return }
+    if (!isInvestmentType && !categoryId) { setError("Selecione uma categoria"); return }
 
     if (!date) { setError("Selecione uma data"); return }
     const dateStr = format(date, "yyyy-MM-dd")
@@ -156,7 +165,7 @@ function TransactionModal({ banks, categories, recurringTemplates, onClose, onVi
         } else {
           await createTransaction({
             bank_id: bankId,
-            category_id: categoryId,
+            category_id: categoryId || null,
             description,
             amount: amt,
             type: selected.type,
@@ -192,7 +201,14 @@ function TransactionModal({ banks, categories, recurringTemplates, onClose, onVi
                   key={opt.id}
                   type="button"
                   data-selected={selectedSubtype === opt.id}
-                  onClick={() => { setSelectedSubtype(opt.id); setCategoryId("") }}
+                  onClick={() => {
+                    setSelectedSubtype(opt.id)
+                    setCategoryId("")
+                    if (opt.id === "investment_yield") {
+                      const firstSavings = banks.find((b) => b.account_type === "savings")
+                      if (firstSavings) setBankId(firstSavings.id)
+                    }
+                  }}
                   className={cn(
                     "flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-medium transition-all",
                     SUBTYPE_COLORS[opt.id]
@@ -288,24 +304,87 @@ function TransactionModal({ banks, categories, recurringTemplates, onClose, onVi
                   </div>
                 )}
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Banco</label>
-                  <Select value={bankId} onValueChange={setBankId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={banks.length === 0 ? "Nenhum banco" : "Selecionar..."} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {banks.map((b) => (
-                        <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {banks.find((b) => b.id === bankId)?.account_type === "credit_card" && (
+                  <label className="block text-xs text-zinc-400 mb-1">
+                    {isYield ? "Conta de Investimento" : "Banco"}
+                  </label>
+                  {isYield && visibleBanks.length === 0 ? (
+                    <p className="text-xs text-zinc-500 py-2">Nenhuma conta de investimento cadastrada.</p>
+                  ) : (
+                    <Select value={bankId} onValueChange={setBankId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={visibleBanks.length === 0 ? "Nenhum banco" : "Selecionar..."}>
+                          {(() => {
+                            const b = visibleBanks.find((b) => b.id === bankId)
+                            if (!b) return null
+                            const typeLabel = b.account_type === "credit_card" ? "Cartão"
+                              : b.account_type === "savings" ? "Investimento"
+                              : "Conta Corrente"
+                            return (
+                              <span className="flex items-center gap-2 min-w-0 overflow-hidden">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: b.color }} />
+                                <span className="truncate">{b.name}</span>
+                                <span className="text-[10px] text-zinc-500 shrink-0">{typeLabel}</span>
+                              </span>
+                            )
+                          })()}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(() => {
+                          const groups: Record<string, typeof visibleBanks> = {}
+                          for (const b of visibleBanks) {
+                            const k = b.account_type ?? "checking"
+                            if (!groups[k]) groups[k] = []
+                            groups[k].push(b)
+                          }
+                          const keys = Object.keys(groups)
+                          const typeLabels: Record<string, string> = {
+                            checking: "Conta Corrente",
+                            savings: "Investimento",
+                            credit_card: "Cartão de Crédito",
+                          }
+                          if (keys.length === 1) {
+                            return visibleBanks.map((b) => (
+                              <SelectItem key={b.id} value={b.id}>
+                                <span className="flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ backgroundColor: b.color }} />
+                                  {b.name}
+                                </span>
+                              </SelectItem>
+                            ))
+                          }
+                          return keys.map((k, i) => (
+                            <SelectGroup key={k}>
+                              <SelectLabel>{typeLabels[k] ?? k}</SelectLabel>
+                              {groups[k].map((b) => (
+                                <SelectItem key={b.id} value={b.id}>
+                                  <span className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ backgroundColor: b.color }} />
+                                    {b.name}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                              {i < keys.length - 1 && <SelectSeparator />}
+                            </SelectGroup>
+                          ))
+                        })()}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {visibleBanks.find((b) => b.id === bankId)?.account_type === "credit_card" && (
                     <p className="text-[11px] text-blue-400/80 mt-1 flex items-center gap-1">
                       <CreditCard className="w-3 h-3" />
                       Cartão de Crédito — será incluído na fatura
                     </p>
                   )}
+                  {isYield && bankId && (
+                    <p className="text-[11px] text-teal-400/80 mt-1 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      Rendimento será somado ao saldo da conta
+                    </p>
+                  )}
                 </div>
+                {!isInvestmentType && (
                 <div>
                   <label className="block text-xs text-zinc-400 mb-1">Categoria</label>
                   <Select value={categoryId} onValueChange={setCategoryId}>
@@ -319,6 +398,7 @@ function TransactionModal({ banks, categories, recurringTemplates, onClose, onVi
                     </SelectContent>
                   </Select>
                 </div>
+                )}
                 <div className="col-span-2">
                   <label className="block text-xs text-zinc-400 mb-1">Notas (opcional)</label>
                   <input

@@ -11,35 +11,44 @@ export type Database = {
     Tables: {
       banks: {
         Row: {
+          account_type: string | null
           balance_date: string
+          closing_day: number | null
           color: string
           created_at: string
           current_balance: number
           id: string
           is_active: boolean
           name: string
+          payment_due_day: number | null
           slug: string
           user_id: string
         }
         Insert: {
+          account_type?: string | null
           balance_date?: string
+          closing_day?: number | null
           color?: string
           created_at?: string
           current_balance?: number
           id?: string
           is_active?: boolean
           name: string
+          payment_due_day?: number | null
           slug: string
           user_id: string
         }
         Update: {
+          account_type?: string | null
           balance_date?: string
+          closing_day?: number | null
           color?: string
           created_at?: string
           current_balance?: number
           id?: string
           is_active?: boolean
           name?: string
+          payment_due_day?: number | null
           slug?: string
           user_id?: string
         }
@@ -164,7 +173,7 @@ export type Database = {
         Row: {
           amount: number
           bank_id: string
-          category_id: string
+          category_id: string | null
           created_at: string
           date: string
           description: string
@@ -181,7 +190,7 @@ export type Database = {
         Insert: {
           amount: number
           bank_id: string
-          category_id: string
+          category_id?: string | null
           created_at?: string
           date: string
           description: string

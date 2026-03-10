@@ -37,6 +37,7 @@ interface Settings {
   goalAmount: number
   initialBalance: number
   targetDate: string | null
+  bankId: string | null
 }
 
 interface Props {
@@ -97,9 +98,18 @@ function ChartTooltip({ active, payload, label }: {
 
 // ─── Settings Modal ───────────────────────────────────────────────────────────
 
-function SettingsModal({ settings, onClose }: { settings: Settings; onClose: () => void }) {
+function SettingsModal({
+  settings,
+  savingsBanks,
+  onClose,
+}: {
+  settings: Settings
+  savingsBanks: Bank[]
+  onClose: () => void
+}) {
   const [goal, setGoal] = useState(settings.goalAmount > 0 ? String(settings.goalAmount) : "")
   const [initial, setInitial] = useState(settings.initialBalance > 0 ? String(settings.initialBalance) : "")
+  const [bankId, setBankId] = useState(settings.bankId ?? (savingsBanks[0]?.id ?? ""))
   const [targetDate, setTargetDate] = useState<Date | undefined>(
     settings.targetDate ? new Date(settings.targetDate + "T00:00:00") : undefined
   )
@@ -114,7 +124,7 @@ function SettingsModal({ settings, onClose }: { settings: Settings; onClose: () 
     setError("")
     startTransition(async () => {
       try {
-        await upsertInvestmentSettings(goalAmt, initAmt, dateStr)
+        await upsertInvestmentSettings(goalAmt, initAmt, dateStr, bankId || null)
         onClose()
       } catch (err) {
         setError(err instanceof Error ? err.message : "Erro ao salvar")
@@ -132,6 +142,20 @@ function SettingsModal({ settings, onClose }: { settings: Settings; onClose: () 
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {savingsBanks.length > 0 && (
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1.5">Conta de investimento</label>
+              <Select value={bankId} onValueChange={setBankId}>
+                <SelectTrigger><SelectValue placeholder="Selecionar conta..." /></SelectTrigger>
+                <SelectContent>
+                  {savingsBanks.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-zinc-600 mt-1">Conta onde o saldo ficará registrado</p>
+            </div>
+          )}
           <div>
             <label className="block text-xs text-zinc-400 mb-1.5">Saldo inicial (R$)</label>
             <NumberInput
@@ -376,12 +400,27 @@ export function GoalsClient({ settings, transactions, banks, categories }: Props
     return { monthsRemaining, remaining, requiredPMT, target }
   }, [settings.targetDate, settings.goalAmount, currentBalance])
 
-  // Last 12 months chart data
+  // Chart data: from first aporte month to current month
   const chartData = useMemo(() => {
     const now = new Date()
+    const nowKey = now.toISOString().slice(0, 7)
+
+    // Find the earliest transaction month
+    const sortedKeys = Array.from(monthlyMap.keys()).sort()
+    const firstKey = sortedKeys[0] ?? nowKey
+
+    // Build list of months from firstKey to nowKey
+    const [fy, fm] = firstKey.split("-").map(Number)
+    const startDate = new Date(fy, fm - 1, 1)
+    const months: Date[] = []
+    const cursor = new Date(startDate)
+    while (cursor.toISOString().slice(0, 7) <= nowKey) {
+      months.push(new Date(cursor))
+      cursor.setMonth(cursor.getMonth() + 1)
+    }
+
     let cumulative = settings.initialBalance
-    return Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1)
+    return months.map((d) => {
       const key = d.toISOString().slice(0, 7)
       const aporte = monthlyMap.get(key) ?? 0
       cumulative += aporte
@@ -832,7 +871,11 @@ export function GoalsClient({ settings, transactions, banks, categories }: Props
 
       {/* ── Modals */}
       {showSettings && (
-        <SettingsModal settings={settings} onClose={() => setShowSettings(false)} />
+        <SettingsModal
+          settings={settings}
+          savingsBanks={banks.filter((b) => b.account_type === "savings")}
+          onClose={() => setShowSettings(false)}
+        />
       )}
       {showAporte && (
         <AporteModal banks={banks} categories={categories} onClose={() => setShowAporte(false)} />

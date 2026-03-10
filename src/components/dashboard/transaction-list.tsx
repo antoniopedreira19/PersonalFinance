@@ -51,15 +51,17 @@ export function TransactionList({ transactions }: { transactions: TransactionWit
                 </p>
               </div>
 
-              <span
-                className="text-[10px] px-2 py-0.5 rounded-full hidden sm:inline-block"
-                style={{
-                  backgroundColor: tx.categories.color + "22",
-                  color: tx.categories.color,
-                }}
-              >
-                {tx.categories.name}
-              </span>
+              {tx.categories && (
+                <span
+                  className="text-[10px] px-2 py-0.5 rounded-full hidden sm:inline-block"
+                  style={{
+                    backgroundColor: tx.categories.color + "22",
+                    color: tx.categories.color,
+                  }}
+                >
+                  {tx.categories.name}
+                </span>
+              )}
 
               <span
                 className={cn(

@@ -17,11 +17,11 @@ function SelectTrigger({
   return (
     <SelectPrimitive.Trigger
       className={cn(
-        "flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder:text-zinc-500",
+        "flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder:text-zinc-500 overflow-hidden",
         "focus:outline-none focus:border-blue-500",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "data-[placeholder]:text-zinc-500",
-        "[&>span]:line-clamp-1",
+        "[&>span]:flex [&>span]:min-w-0 [&>span]:flex-1 [&>span]:overflow-hidden [&>span]:whitespace-nowrap",
         className
       )}
       {...props}

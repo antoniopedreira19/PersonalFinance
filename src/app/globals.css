@@ -3,6 +3,13 @@
 @tailwind utilities;
 
 @layer base {
+  /* Minimalist scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: oklch(0.32 0.002 260); border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: oklch(0.42 0.002 260); }
+  * { scrollbar-width: thin; scrollbar-color: oklch(0.32 0.002 260) transparent; }
+
   :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);

@@ -5,13 +5,15 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 interface DashboardHeaderProps {
   title: string;
   subtitle?: string;
+  nav?: React.ReactNode;
   userEmail?: string;
   children?: React.ReactNode;
 }
 
 export function DashboardHeader({
   title,
-  subtitle = "Março 2024",
+  subtitle,
+  nav,
   userEmail,
   children,
 }: DashboardHeaderProps) {
@@ -23,7 +25,7 @@ export function DashboardHeader({
     <header className="flex items-center justify-between mb-8">
       <div>
         <h1 className="text-2xl font-semibold text-white tracking-tight">{title}</h1>
-        <p className="text-sm text-zinc-500 mt-0.5">{subtitle}</p>
+        {nav ?? (subtitle && <p className="text-sm text-zinc-500 mt-0.5">{subtitle}</p>)}
       </div>
 
       <div className="flex items-center gap-3">

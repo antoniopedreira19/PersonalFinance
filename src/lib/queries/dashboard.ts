@@ -18,9 +18,10 @@ export type ProjectionItem = {
   subtype?: string | null
   installment_number?: number | null
   total_installments?: number | null
+  installment_group_id?: string | null
   is_paid?: boolean
   isProjected?: true
-  banks: { id: string; name: string; color: string } | null
+  banks: { id: string; name: string; color: string; account_type?: string | null } | null
   categories?: { id: string; name: string; color: string; icon: string } | null
 }
 
@@ -31,7 +32,7 @@ export async function getMonthlyProjection(month: Date) {
   const [{ data: transactions }, { data: templates }] = await Promise.all([
     supabase
       .from("transactions")
-      .select("id, type, subtype, amount, date, description, is_paid, recurring_template_id, installment_number, total_installments, banks(id, name, color), categories(id, name, color, icon)")
+      .select("id, type, subtype, amount, date, description, is_paid, recurring_template_id, installment_number, total_installments, installment_group_id, banks(id, name, color, account_type), categories(id, name, color, icon)")
       .gte("date", start)
       .lte("date", end),
     supabase
@@ -52,6 +53,7 @@ export async function getMonthlyProjection(month: Date) {
     .filter((t) => t.type === "income" && !coveredTemplateIds.has(t.id))
     .map((t) => ({ ...t, isProjected: true as const, date: `${monthPrefix}-${String(t.day_of_month).padStart(2, "0")}`, subtype: "recurring", categories: null }))
   const totalReceber = [...unpaidIncomeTransactions, ...projectedIncomeTemplates].reduce((s, t) => s + t.amount, 0)
+  const totalAllIncome = [...allIncomeTransactions, ...projectedIncomeTemplates].reduce((s, t) => s + t.amount, 0)
 
   const fixedTransactions = (transactions ?? []).filter((t) => t.type === "expense" && t.recurring_template_id !== null)
   const projectedFixedTemplates = (templates ?? [])
@@ -67,21 +69,40 @@ export async function getMonthlyProjection(month: Date) {
   )
   const totalDaily = dailyTransactions.reduce((s, t) => s + t.amount, 0)
 
+  const investmentTransactions = (transactions ?? []).filter((t) => t.type === "investment")
+  const totalInvestments = investmentTransactions.reduce((s, t) => s + t.amount, 0)
+
   return {
     totalReceber,
+    totalAllIncome,
     totalFixed,
     totalInstallments,
     totalDaily,
+    totalInvestments,
     receberItems: [...unpaidIncomeTransactions, ...projectedIncomeTemplates] as unknown as ProjectionItem[],
     fixedItems: [...fixedTransactions, ...projectedFixedTemplates] as unknown as ProjectionItem[],
     installmentItems: installmentTransactions as unknown as ProjectionItem[],
     dailyItems: dailyTransactions as unknown as ProjectionItem[],
+    investmentItems: investmentTransactions as unknown as ProjectionItem[],
   }
 }
 
-export async function getCreditCardFaturas() {
+export async function getMonthlyInvestmentGoal(month: string): Promise<number> {
   const supabase = await createClient()
-  const today = new Date()
+  const { data } = await supabase
+    .from("investment_goals")
+    .select("target_amount")
+    .eq("month", `${month}-01`)
+    .maybeSingle()
+  return data?.target_amount ?? 0
+}
+
+export async function getCreditCardFaturas(month?: string) {
+  const supabase = await createClient()
+  // Use day 15 of the selected month as a stable reference point
+  const ref = month
+    ? new Date(parseInt(month.slice(0, 4)), parseInt(month.slice(5, 7)) - 1, 15)
+    : new Date()
 
   const { data: banks } = await supabase
     .from("banks")
@@ -94,19 +115,13 @@ export async function getCreditCardFaturas() {
   const results = await Promise.all(
     banks.map(async (bank) => {
       const closingDay = bank.closing_day ?? 1
-      const d = today.getDate()
-      let cycleStart: Date, cycleEnd: Date
-      if (d > closingDay) {
-        cycleStart = new Date(today.getFullYear(), today.getMonth(), closingDay + 1)
-        cycleEnd = new Date(today.getFullYear(), today.getMonth() + 1, closingDay)
-      } else {
-        cycleStart = new Date(today.getFullYear(), today.getMonth() - 1, closingDay + 1)
-        cycleEnd = new Date(today.getFullYear(), today.getMonth(), closingDay)
-      }
+      // Billing cycle for the reference month: from (prev month closing_day+1) to (this month closing_day)
+      const cycleStart = new Date(ref.getFullYear(), ref.getMonth() - 1, closingDay + 1)
+      const cycleEnd = new Date(ref.getFullYear(), ref.getMonth(), closingDay)
 
       const { data } = await supabase
         .from("transactions")
-        .select("amount, description, date")
+        .select("amount, description, date, subtype, recurring_template_id, installment_number, total_installments")
         .eq("bank_id", bank.id)
         .eq("type", "expense")
         .gte("date", cycleStart.toISOString().slice(0, 10))
@@ -120,7 +135,15 @@ export async function getCreditCardFaturas() {
         closingDay,
         paymentDueDay: bank.payment_due_day as number | null,
         fatura: (data ?? []).reduce((s, t) => s + t.amount, 0),
-        transactions: (data ?? []) as Array<{ amount: number; description: string; date: string }>,
+        transactions: (data ?? []) as Array<{
+          amount: number
+          description: string
+          date: string
+          subtype: string | null
+          recurring_template_id: string | null
+          installment_number: number | null
+          total_installments: number | null
+        }>,
       }
     })
   )
@@ -158,26 +181,31 @@ export async function getRecentTransactions(): Promise<TransactionWithRelations[
   return (data ?? []) as unknown as TransactionWithRelations[]
 }
 
+type CategoryTx = { description: string; date: string; amount: number; banks: { name: string; color: string; slug: string } }
+
 export async function getCategoryBreakdown(month?: Date) {
   const supabase = await createClient()
   const { start, end } = monthRange(month ?? new Date())
 
   const { data } = await supabase
     .from("transactions")
-    .select("amount, categories(id, name, color)")
+    .select("description, date, amount, categories(id, name, color), banks(name, color, slug)")
     .eq("type", "expense")
     .gte("date", start)
     .lte("date", end)
+    .order("date", { ascending: false })
 
   if (!data || data.length === 0) return []
 
-  const map = new Map<string, { name: string; color: string; amount: number }>()
+  const map = new Map<string, { name: string; color: string; amount: number; transactions: CategoryTx[] }>()
   for (const t of data) {
     const cat = (Array.isArray(t.categories) ? t.categories[0] : t.categories) as { id: string; name: string; color: string } | null
-    if (!cat) continue
+    const bank = (Array.isArray(t.banks) ? t.banks[0] : t.banks) as { name: string; color: string; slug: string } | null
+    if (!cat || !bank) continue
     const existing = map.get(cat.id)
-    if (existing) existing.amount += t.amount
-    else map.set(cat.id, { name: cat.name, color: cat.color, amount: t.amount })
+    const tx: CategoryTx = { description: t.description, date: t.date, amount: t.amount, banks: bank }
+    if (existing) { existing.amount += t.amount; existing.transactions.push(tx) }
+    else map.set(cat.id, { name: cat.name, color: cat.color, amount: t.amount, transactions: [tx] })
   }
 
   const total = Array.from(map.values()).reduce((s, c) => s + c.amount, 0)
@@ -303,6 +331,7 @@ export async function getMonthlyChartData(months = 6) {
 
 export async function getTransactions(filters?: {
   month?: string
+  endDate?: string
   bankId?: string
   categoryId?: string
   type?: string
@@ -316,7 +345,7 @@ export async function getTransactions(filters?: {
   if (filters?.month) {
     const [year, month] = filters.month.split("-").map(Number)
     const start = new Date(year, month - 1, 1).toISOString().slice(0, 10)
-    const end = new Date(year, month, 0).toISOString().slice(0, 10)
+    const end = filters.endDate ?? new Date(year, month, 0).toISOString().slice(0, 10)
     query = query.gte("date", start).lte("date", end)
   }
   if (filters?.bankId) query = query.eq("bank_id", filters.bankId)
@@ -369,12 +398,13 @@ export async function getInvestmentSettings() {
   const supabase = await createClient()
   const { data } = await supabase
     .from("investment_settings")
-    .select("goal_amount, initial_balance, target_date")
+    .select("goal_amount, initial_balance, target_date, bank_id")
     .maybeSingle()
   return {
     goalAmount: data?.goal_amount ?? 0,
     initialBalance: data?.initial_balance ?? 0,
     targetDate: (data?.target_date as string | null) ?? null,
+    bankId: (data?.bank_id as string | null) ?? null,
   }
 }
 
