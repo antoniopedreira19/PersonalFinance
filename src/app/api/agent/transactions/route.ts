@@ -46,17 +46,22 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/agent/transactions
-// Body: { userId, description, amount, type, date, categoryName?, bankId? }
+// Body: { userId, description, amount, type, date, category?, categoryName?, subtype, bankId? }
 export async function POST(req: NextRequest) {
   if (!validateAgentKey(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   const body = await req.json()
-  const { userId, description, amount, type, date, categoryName, bankId } = body
+  // Extraímos category (do n8n) e subtype
+  const { userId, description, amount, type, date, category, categoryName, subtype, bankId } = body
 
-  if (!userId || !description || !amount || !type || !date) {
-    return NextResponse.json({ error: "userId, description, amount, type, date are required" }, { status: 400 })
+  // O n8n manda 'category', mas mantemos 'categoryName' por compatibilidade
+  const resolvedCategoryName = category || categoryName;
+
+  // Atualizamos a validação para exigir o subtype
+  if (!userId || !description || amount === undefined || !type || !date || !subtype) {
+    return NextResponse.json({ error: "userId, description, amount, type, date, and subtype are required" }, { status: 400 })
   }
 
   if (!["income", "expense", "investment"].includes(type)) {
@@ -67,12 +72,12 @@ export async function POST(req: NextRequest) {
 
   // Resolve category_id by name if provided
   let categoryId: string | null = null
-  if (categoryName) {
+  if (resolvedCategoryName) {
     const { data: cat } = await supabase
       .from("categories")
       .select("id")
       .eq("user_id", userId)
-      .ilike("name", categoryName)
+      .ilike("name", resolvedCategoryName)
       .maybeSingle()
     categoryId = cat?.id ?? null
   }
@@ -106,6 +111,7 @@ export async function POST(req: NextRequest) {
       date,
       bank_id: resolvedBankId,
       category_id: categoryId,
+      subtype: subtype, // <-- Aqui enviamos o subtype obrigatório para o banco
       is_paid: true,
     })
     .select("id")
