@@ -90,6 +90,7 @@ export async function updateTransaction(id: string, data: Partial<TransactionIns
       if (error) throw new Error(error.message)
 
       // Update remaining fields (non bank_id) on the single transaction
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { bank_id: _bankId, ...rest } = data
       if (Object.keys(rest).length > 0) {
         const { error: e2 } = await supabase.from("transactions").update(rest).eq("id", id).eq("user_id", user.id)
