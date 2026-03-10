@@ -32,8 +32,9 @@ export async function middleware(request: NextRequest) {
 
   const isAuthRoute = request.nextUrl.pathname.startsWith("/login") ||
     request.nextUrl.pathname.startsWith("/register");
+  const isAgentRoute = request.nextUrl.pathname.startsWith("/api/agent");
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isAuthRoute && !isAgentRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
