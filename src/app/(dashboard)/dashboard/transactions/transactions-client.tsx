@@ -79,7 +79,7 @@ export function TransactionsClient({ transactions, banks, month, upToToday = fal
         const ao = order[a.bankMeta?.account_type as keyof typeof order] ?? 3
         const bo = order[b.bankMeta?.account_type as keyof typeof order] ?? 3
         if (ao !== bo) return ao - bo
-        return (a.txs[0].banks.name ?? "").localeCompare(b.txs[0].banks.name ?? "")
+        return (a.txs[0].banks?.name ?? "").localeCompare(b.txs[0].banks?.name ?? "")
       })
   }, [localTxs, banks])
 
@@ -190,9 +190,9 @@ export function TransactionsClient({ transactions, banks, month, upToToday = fal
                   {/* Bank header */}
                   <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800/60">
                     <div className="flex items-center gap-3">
-                      <BankLogo slug={firstBank.slug} name={firstBank.name} size="sm" />
+                      <BankLogo slug={firstBank?.slug ?? ""} name={firstBank?.name ?? ""} size="sm" />
                       <div>
-                        <span className="text-sm font-medium text-white">{firstBank.name}</span>
+                        <span className="text-sm font-medium text-white">{firstBank?.name}</span>
                         {bankMeta?.account_type && (
                           <span className="ml-2 text-[10px] text-zinc-600">
                             {ACCOUNT_TYPE_LABELS[bankMeta.account_type] ?? bankMeta.account_type}
@@ -236,9 +236,9 @@ export function TransactionsClient({ transactions, banks, month, upToToday = fal
 
                         <span
                           className="hidden sm:block text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
-                          style={{ backgroundColor: t.categories.color + "18", color: t.categories.color }}
+                          style={{ backgroundColor: (t.categories?.color ?? "#666") + "18", color: t.categories?.color ?? "#666" }}
                         >
-                          {t.categories.name}
+                          {t.categories?.name}
                         </span>
 
                         <span className="text-[11px] text-zinc-600 tabular-nums shrink-0">

@@ -174,8 +174,8 @@ function TransactionModal({ banks, categories, recurringTemplates, onClose, onVi
             notes: notes || null,
           })
         }
-        router.refresh()
         onClose()
+        router.refresh()
       } catch (err) {
         setError(err instanceof Error ? err.message : "Erro ao salvar")
       }

@@ -1,3 +1,4 @@
+import { cache } from "react"
 import { createClient } from "@/lib/supabase/server"
 import type { TransactionWithRelations } from "@/lib/supabase/types"
 
@@ -112,43 +113,53 @@ export async function getCreditCardFaturas(month?: string) {
 
   if (!banks || banks.length === 0) return []
 
-  const results = await Promise.all(
-    banks.map(async (bank) => {
-      const closingDay = bank.closing_day ?? 1
-      // Billing cycle for the reference month: from (prev month closing_day+1) to (this month closing_day)
-      const cycleStart = new Date(ref.getFullYear(), ref.getMonth() - 1, closingDay + 1)
-      const cycleEnd = new Date(ref.getFullYear(), ref.getMonth(), closingDay)
+  // Compute widest date window across all cards to fetch in a single query
+  const closingDays = banks.map((b) => b.closing_day ?? 1)
+  const minClosingDay = Math.min(...closingDays)
+  const maxClosingDay = Math.max(...closingDays)
+  const globalStart = new Date(ref.getFullYear(), ref.getMonth() - 1, minClosingDay + 1)
+    .toISOString().slice(0, 10)
+  const globalEnd = new Date(ref.getFullYear(), ref.getMonth(), maxClosingDay)
+    .toISOString().slice(0, 10)
 
-      const { data } = await supabase
-        .from("transactions")
-        .select("amount, description, date, subtype, recurring_template_id, installment_number, total_installments")
-        .eq("bank_id", bank.id)
-        .eq("type", "expense")
-        .gte("date", cycleStart.toISOString().slice(0, 10))
-        .lte("date", cycleEnd.toISOString().slice(0, 10))
-        .order("date", { ascending: false })
+  const { data: allTxs } = await supabase
+    .from("transactions")
+    .select("amount, description, date, subtype, recurring_template_id, installment_number, total_installments, bank_id")
+    .in("bank_id", banks.map((b) => b.id))
+    .eq("type", "expense")
+    .gte("date", globalStart)
+    .lte("date", globalEnd)
+    .order("date", { ascending: false })
 
-      return {
-        bankId: bank.id,
-        bankName: bank.name,
-        bankColor: bank.color,
-        closingDay,
-        paymentDueDay: bank.payment_due_day as number | null,
-        fatura: (data ?? []).reduce((s, t) => s + t.amount, 0),
-        transactions: (data ?? []) as Array<{
-          amount: number
-          description: string
-          date: string
-          subtype: string | null
-          recurring_template_id: string | null
-          installment_number: number | null
-          total_installments: number | null
-        }>,
-      }
-    })
-  )
+  return banks.map((bank) => {
+    const closingDay = bank.closing_day ?? 1
+    const cycleStart = new Date(ref.getFullYear(), ref.getMonth() - 1, closingDay + 1)
+      .toISOString().slice(0, 10)
+    const cycleEnd = new Date(ref.getFullYear(), ref.getMonth(), closingDay)
+      .toISOString().slice(0, 10)
 
-  return results
+    const transactions = (allTxs ?? []).filter(
+      (t) => t.bank_id === bank.id && t.date >= cycleStart && t.date <= cycleEnd
+    ) as Array<{
+      amount: number
+      description: string
+      date: string
+      subtype: string | null
+      recurring_template_id: string | null
+      installment_number: number | null
+      total_installments: number | null
+    }>
+
+    return {
+      bankId: bank.id,
+      bankName: bank.name,
+      bankColor: bank.color,
+      closingDay,
+      paymentDueDay: bank.payment_due_day as number | null,
+      fatura: transactions.reduce((s, t) => s + t.amount, 0),
+      transactions,
+    }
+  })
 }
 
 export async function getMonthlyCashBalance(month: string): Promise<number> {
@@ -339,7 +350,7 @@ export async function getTransactions(filters?: {
   const supabase = await createClient()
   let query = supabase
     .from("transactions")
-    .select("*, banks(id, name, slug, color), categories(id, name, color, icon)")
+    .select("id, description, amount, type, subtype, date, bank_id, category_id, notes, installment_number, total_installments, installment_group_id, recurring_template_id, is_paid, created_at, user_id, banks(id, name, slug, color), categories(id, name, color, icon)")
     .order("date", { ascending: false })
 
   if (filters?.month) {
@@ -353,27 +364,27 @@ export async function getTransactions(filters?: {
   if (filters?.type) query = query.eq("type", filters.type)
 
   const { data } = await query
-  return (data ?? []) as TransactionWithRelations[]
+  return (data ?? []) as unknown as TransactionWithRelations[]
 }
 
-export async function getBanks() {
+export const getBanks = cache(async function getBanks() {
   const supabase = await createClient()
   const { data } = await supabase
     .from("banks")
     .select("id, name, slug, color, current_balance, balance_date, is_active, account_type, closing_day, payment_due_day, created_at, user_id")
     .order("created_at")
   return data ?? []
-}
+})
 
-export async function getCategories(type?: "income" | "expense") {
+export const getCategories = cache(async function getCategories(type?: "income" | "expense") {
   const supabase = await createClient()
   let query = supabase.from("categories").select("id, name, type, color, icon, user_id, created_at").order("name")
   if (type) query = query.eq("type", type)
   const { data } = await query
   return data ?? []
-}
+})
 
-export async function getRecurringTemplates(type?: "income" | "expense") {
+export const getRecurringTemplates = cache(async function getRecurringTemplates(type?: "income" | "expense") {
   const supabase = await createClient()
   let query = supabase
     .from("recurring_templates")
@@ -392,7 +403,7 @@ export async function getRecurringTemplates(type?: "income" | "expense") {
     banks: { id: string; name: string; color: string }
     categories: { id: string; name: string; color: string }
   }>
-}
+})
 
 export async function getInvestmentSettings() {
   const supabase = await createClient()
